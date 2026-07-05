@@ -17,8 +17,12 @@ def ensure_seed():
                                role="admin", full_name="Administrator"))
             db.commit()
 
-        if db.query(models.Assessment).first():
-            return  # already seeded
+        # Seed the demo content only once ever. A marker user is more reliable
+        # than checking for assessments (the admin may delete the sample one).
+        if db.query(models.User).filter_by(username="demo_student").first():
+            return  # already seeded at some point — never re-seed
+        if db.query(models.Assessment).first() or db.query(models.Question).first():
+            return  # admin already has real content — don't add samples
 
         demo = models.User(username="demo_student", password_hash=hash_password("demo123"),
                            role="student", full_name="Demo Student")
@@ -30,6 +34,7 @@ def ensure_seed():
                        "**Example**\n```\nInput:\n2\n3\nOutput:\n5\n```"),
             config={
                 "starter_code": "a = int(input())\nb = int(input())\n# print their sum\n",
+                "solution": "a = int(input())\nb = int(input())\nprint(a + b)\n",
                 "time_limit": 5,
                 "test_cases": [
                     {"input": "2\n3\n", "expected": "5", "marks": 3, "visible": True},

@@ -116,6 +116,39 @@ def _run_sql_case(seed_sql: str, query: str, correct_sql: str, order_sensitive: 
         conn.close()
 
 
+def run_sql_free(config: dict, query: str) -> dict:
+    """Run the student's query against the first visible dataset, no grading —
+    just return the result table so they can see their own output."""
+    datasets = config.get("datasets") or [{"seed_sql": config.get("seed_sql", ""), "visible": True}]
+    ds = next((d for d in datasets if d.get("visible", True)), datasets[0])
+    schema = "run_" + uuid.uuid4().hex[:12]
+    conn = psycopg2.connect(SANDBOX_DSN)
+    conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+    try:
+        cur = conn.cursor()
+        cur.execute(f'CREATE SCHEMA "{schema}"')
+        cur.execute(f'SET search_path TO "{schema}"')
+        cur.execute(f"SET statement_timeout = {STATEMENT_TIMEOUT_MS}")
+        cur.execute(ds.get("seed_sql", ""))
+        if FORBIDDEN_SQL.search(query or ""):
+            return {"error": "Only read-only SELECT queries are allowed.", "columns": [], "rows": []}
+        try:
+            cur.execute(query)
+            cols = [d[0] for d in cur.description] if cur.description else []
+            rows = [tuple(str(v) if v is not None else None for v in r)
+                    for r in cur.fetchall()][:200] if cur.description else []
+            return {"error": None, "columns": cols, "rows": rows}
+        except Exception as e:
+            return {"error": str(e).strip()[:2000], "columns": [], "rows": []}
+    finally:
+        try:
+            cur2 = conn.cursor()
+            cur2.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        except Exception:
+            pass
+        conn.close()
+
+
 def grade_sql(config: dict, query: str, only_visible: bool = False) -> dict:
     correct_sql = config.get("correct_sql", "")
     order_sensitive = bool(config.get("order_sensitive", False))

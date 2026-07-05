@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from .. import models, schemas
 from ..auth import get_current_user
-from ..grading import grade_answer, grade_python, grade_sql, effective_marks
+from ..grading import (grade_answer, grade_python, grade_sql, effective_marks,
+                       run_python, run_sql_free)
 
 router = APIRouter(prefix="/api/student")
 
@@ -81,9 +82,10 @@ def _student_question_view(aq):
     cfg, safe = q.config or {}, {}
     if q.qtype == "python":
         safe = {"starter_code": cfg.get("starter_code", ""),
-                "time_limit": cfg.get("time_limit", 10)}
+                "time_limit": cfg.get("time_limit", 10),
+                "allow_free_run": cfg.get("allow_free_run", True)}
     elif q.qtype == "sql":
-        safe = {}
+        safe = {"allow_free_run": cfg.get("allow_free_run", True)}
     elif q.qtype in ("mcq_single", "mcq_multi"):
         safe = {"options": cfg.get("options", []),
                 **({"partial": cfg.get("partial", False)} if q.qtype == "mcq_multi" else {})}
@@ -160,6 +162,29 @@ def run_code(aid: int, body: schemas.RunIn, user=Depends(get_current_user),
     raise HTTPException(400, "Run is only for coding questions")
 
 
+@router.post("/assessments/{aid}/run-free")
+def run_code_free(aid: int, body: dict, user=Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    """Just run the student's code/query and show them THEIR output.
+    Python: runs with custom stdin. SQL: runs against the visible dataset.
+    No grading, no comparison."""
+    a, att = _open_attempt(aid, user, db)
+    aq = next((x for x in a.questions if x.question_id == body.get("question_id")), None)
+    if not aq:
+        raise HTTPException(404, "Question not in this assessment")
+    q = aq.question
+    if not (q.config or {}).get("allow_free_run", True):
+        raise HTTPException(403, "Free run is disabled for this question")
+    if q.qtype == "python":
+        cfg = q.config or {}
+        return {"kind": "python",
+                **run_python(body.get("code") or "", body.get("stdin") or "",
+                             int(cfg.get("time_limit") or 10))}
+    if q.qtype == "sql":
+        return {"kind": "sql", **run_sql_free(q.config or {}, body.get("query") or "")}
+    raise HTTPException(400, "Run is only for coding questions")
+
+
 @router.post("/assessments/{aid}/submit")
 def submit_attempt(aid: int, user=Depends(get_current_user), db: Session = Depends(get_db)):
     a, att = _open_attempt(aid, user, db)
@@ -185,12 +210,34 @@ def my_result(aid: int, user=Depends(get_current_user), db: Session = Depends(ge
     items, total, maxm = [], 0.0, 0.0
     answers = {ans.question_id: ans for ans in db.query(models.Answer).filter_by(attempt_id=att.id)}
     for aq in a.questions:
+        q, cfg = aq.question, aq.question.config or {}
         m = effective_marks(aq); maxm += m
         ans = answers.get(aq.question_id)
         s = None
         if ans:
             s = ans.manual_score if ans.manual_score is not None else ans.auto_score
         total += s or 0
-        items.append({"title": aq.question.title, "qtype": aq.question.qtype,
-                      "marks": m, "score": s})
+
+        # what the admin's expected answer looks like, per type
+        review = {}
+        if q.qtype == "python":
+            review = {"solution": cfg.get("solution", ""),
+                      "test_cases": [{"input": tc.get("input", ""),
+                                      "expected": tc.get("expected", ""),
+                                      "visible": tc.get("visible", False)}
+                                     for tc in cfg.get("test_cases", [])]}
+        elif q.qtype == "sql":
+            review = {"correct_sql": cfg.get("correct_sql", "")}
+        elif q.qtype in ("mcq_single", "mcq_multi"):
+            review = {"options": cfg.get("options", []), "correct": cfg.get("correct")}
+        elif q.qtype == "fill_blank":
+            review = {"accepted": [b.get("answers", []) for b in cfg.get("blanks", [])]}
+
+        items.append({
+            "title": q.title, "qtype": q.qtype, "marks": m, "score": s,
+            "statement": q.statement,
+            "payload": ans.payload if ans else None,
+            "detail": ans.detail if ans else None,
+            "review": review,
+        })
     return {"title": a.title, "total": round(total, 2), "max": round(maxm, 2), "items": items}

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { api, getAuth, setAuth } from './api'
 import AdminApp from './pages/AdminApp'
 import StudentApp from './pages/StudentApp'
+import { ThemeToggle } from './theme'
 import './styles.css'
 
 function Login({ onLogin }) {
@@ -23,6 +24,7 @@ function Login({ onLogin }) {
   return (
     <div className="login-wrap">
       <div className="login-card">
+        <div style={{ alignSelf: 'flex-end' }}><ThemeToggle /></div>
         <div className="brand">Assess<span>Hub</span></div>
         <p className="muted">Sign in with the credentials given to you.</p>
         <input placeholder="Username" value={username} onChange={e => setU(e.target.value)} />

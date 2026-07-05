@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api, downloadCsv, fmtDate, toLocalInput, fromLocalInput } from '../api'
+import { ThemeToggle } from '../theme'
 
 const TYPES = {
   python: 'Python coding', sql: 'SQL (PostgreSQL)', mcq_single: 'MCQ (single answer)',
@@ -73,9 +74,16 @@ function QuestionEditor({ initial, onSaved, onCancel }) {
         <>
           <label>Starter code (optional)</label>
           <textarea rows={4} value={cfg.starter_code} onChange={e => setCfg({ starter_code: e.target.value })} />
+          <label>Model solution (optional — shown to students in their post-submit review if results are visible)</label>
+          <textarea rows={4} className="mono" value={cfg.solution || ''} onChange={e => setCfg({ solution: e.target.value })} />
           <label>Time limit per test case (seconds)</label>
           <input type="number" style={{ width: 120 }} value={cfg.time_limit}
             onChange={e => setCfg({ time_limit: Number(e.target.value) })} />
+          <label style={{ margin: '10px 0' }}>
+            <input type="checkbox" style={{ width: 'auto' }} checked={cfg.allow_free_run !== false}
+              onChange={e => setCfg({ allow_free_run: e.target.checked })} />
+            {' '}Allow "Run my code" (student can run with their own custom input; untick to only allow running your visible test cases)
+          </label>
           <label>Test cases (hidden cases run only on final submit)</label>
           {cfg.test_cases.map((tc, i) => (
             <div className="tc-editor" key={i}>
@@ -109,6 +117,11 @@ function QuestionEditor({ initial, onSaved, onCancel }) {
           <label style={{ margin: '10px 0' }}>
             <input type="checkbox" style={{ width: 'auto' }} checked={cfg.order_sensitive}
               onChange={e => setCfg({ order_sensitive: e.target.checked })} /> Row order matters (use when the question asks for ORDER BY)
+          </label>
+          <label style={{ margin: '10px 0' }}>
+            <input type="checkbox" style={{ width: 'auto' }} checked={cfg.allow_free_run !== false}
+              onChange={e => setCfg({ allow_free_run: e.target.checked })} />
+            {' '}Allow "Run my code" (student can see their query's raw result table; untick to only allow the graded visible-case check)
           </label>
           <label>Datasets (each is one graded test case with its own seed data)</label>
           {cfg.datasets.map((ds, i) => (
@@ -603,6 +616,7 @@ export default function AdminApp({ auth, onLogout }) {
           ))}
         </div>
         <div className="spacer" />
+        <ThemeToggle />
         <span>Admin: {auth.username}</span>
         <button className="btn sm" onClick={onLogout}>Log out</button>
       </div>

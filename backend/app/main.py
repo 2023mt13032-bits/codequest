@@ -28,8 +28,12 @@ def startup():
             break
         except OperationalError:
             time.sleep(2)
-    from .seed import ensure_seed
-    ensure_seed()
+    try:
+        from .seed import ensure_seed
+        ensure_seed()
+    except Exception as e:
+        # Seeding is a convenience — a failure here must never take the app down.
+        print(f"[seed] skipped due to error: {e}")
 
 
 @app.post("/api/login")
