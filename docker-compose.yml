@@ -1,0 +1,63 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-app}
+      POSTGRES_DB: assesshub
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  sqlsandbox:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sandbox
+      POSTGRES_PASSWORD: ${SANDBOX_PASSWORD:-sandbox}
+      POSTGRES_DB: sandbox
+    # no volume: sandbox data is throwaway by design
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sandbox"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  executor:
+    build: ./executor
+    environment:
+      MAX_CONCURRENT: "4"
+      MEM_LIMIT_MB: "256"
+    restart: unless-stopped
+    # internal only — not exposed to the host
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://app:${DB_PASSWORD:-app}@db:5432/assesshub
+      SANDBOX_DATABASE_URL: postgresql://sandbox:${SANDBOX_PASSWORD:-sandbox}@sqlsandbox:5432/sandbox
+      EXECUTOR_URL: http://executor:8001
+      SECRET_KEY: ${SECRET_KEY:-change-me}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      SQL_TIMEOUT_MS: "10000"
+    depends_on:
+      db:
+        condition: service_healthy
+      sqlsandbox:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  dbdata:
