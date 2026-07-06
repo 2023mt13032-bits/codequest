@@ -25,8 +25,15 @@ function Login({ onLogin }) {
     <div className="login-wrap">
       <div className="login-card">
         <div style={{ alignSelf: 'flex-end' }}><ThemeToggle /></div>
-        <div className="brand">Assess<span>Hub</span></div>
-        <p className="muted">Sign in with the credentials given to you.</p>
+        <div className="brand" style={{ textAlign: 'center', fontSize: 28 }}>
+          Assess<span>Hub</span>
+        </div>
+        <div className="company-badge" style={{ textAlign: 'center', display: 'block', marginTop: -6 }}>
+          by Kantaka Sodhana
+        </div>
+        <p className="muted" style={{ textAlign: 'center', fontSize: 14 }}>
+          Sign in with the credentials given to you.
+        </p>
         <input placeholder="Username" value={username} onChange={e => setU(e.target.value)} />
         <input placeholder="Password" type="password" value={password}
           onChange={e => setP(e.target.value)}

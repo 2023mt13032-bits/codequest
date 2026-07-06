@@ -102,20 +102,19 @@ function Exam({ aid, onExit }) {
   const [data, setData] = useState(null)
   const [idx, setIdx] = useState(0)
   const [answers, setAnswers] = useState({})
-  const [runRes, setRunRes] = useState({})    // graded run (visible cases)
-  const [freeRes, setFreeRes] = useState({})  // free run (my output)
-  const [stdin, setStdin] = useState({})      // custom input per question
+  const [runRes, setRunRes] = useState({})
+  const [freeRes, setFreeRes] = useState({})
+  const [stdin, setStdin] = useState({})
   const [showStdin, setShowStdin] = useState(false)
   const [busy, setBusy] = useState('')
   const [err, setErr] = useState('')
   const saveTimers = useRef({})
 
-  // resizable panes: left pane width (%) and output panel height (%)
   const [leftW, setLeftW] = useState(44)
   const [outH, setOutH] = useState(42)
   const examRef = useRef(null)
   const rightRef = useRef(null)
-  const drag = useRef(null) // 'v' | 'h' | null
+  const drag = useRef(null)
 
   useEffect(() => {
     const move = e => {
@@ -158,11 +157,13 @@ function Exam({ aid, onExit }) {
       .catch(e => setErr(e.message))
   }, [aid])
 
+  const [saveErr, setSaveErr] = useState(false)
   const save = useCallback((qid, payload) => {
     clearTimeout(saveTimers.current[qid])
     saveTimers.current[qid] = setTimeout(() => {
       api(`/student/assessments/${aid}/save`, { method: 'POST', body: { question_id: qid, payload } })
-        .catch(() => {})
+        .then(() => setSaveErr(false))
+        .catch(() => setSaveErr(true))
     }, 800)
   }, [aid])
 
@@ -232,8 +233,11 @@ function Exam({ aid, onExit }) {
   return (
     <>
       <div className="topbar">
-        <div className="brand">Assess<span>Hub</span></div>
-        <b>{data.title}</b>
+        <div>
+          <div className="brand">Assess<span>Hub</span></div>
+          <div className="company-badge">Kantaka Sodhana</div>
+        </div>
+        <b style={{ fontSize: 14 }}>{data.title}</b>
         <div className="spacer" />
         <ThemeToggle />
         <Timer seconds={data.seconds_left} onExpire={() => submitAll(true)} />
@@ -251,8 +255,11 @@ function Exam({ aid, onExit }) {
                 onClick={() => setIdx(i)}>{i + 1}</button>
             ))}
           </div>
-          <h2>{q.title}</h2>
-          <div className="muted" style={{ marginBottom: 10 }}>{q.marks} marks · {q.qtype.replace('_', ' ')}</div>
+          <h2 style={{ fontSize: 20, marginBottom: 6 }}>{q.title}</h2>
+          <div className="muted" style={{ marginBottom: 14, fontSize: 12 }}>
+            <span className="pill open" style={{ fontSize: 10, marginRight: 8 }}>{q.marks} marks</span>
+            {q.qtype.replace('_', ' ')}
+          </div>
           {q.qtype !== 'fill_blank' && <MD text={q.statement} />}
           {q.qtype === 'fill_blank' && <p className="muted">Fill the blanks on the right.</p>}
         </div>
@@ -262,22 +269,25 @@ function Exam({ aid, onExit }) {
 
         <div className="exam-right" ref={rightRef}>
           <div className="work">
-            {/* editor / answer area — flex:1 + minHeight:0 so the output panel below is always visible */}
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               {q.qtype === 'python' && (
                 <Editor height="100%" language="python" theme="vs-dark"
                   value={ans.code ?? q.config.starter_code ?? ''}
                   onChange={v => update(q.question_id, { code: v ?? '' })}
-                  options={{ minimap: { enabled: false }, fontSize: 14, automaticLayout: true }} />
+                  options={{ minimap: { enabled: false }, fontSize: 14, automaticLayout: true,
+                    padding: { top: 16 }, smoothScrolling: true, cursorBlinking: 'smooth',
+                    cursorSmoothCaretAnimation: 'on' }} />
               )}
               {q.qtype === 'sql' && (
                 <Editor height="100%" language="sql" theme="vs-dark"
                   value={ans.query ?? ''}
                   onChange={v => update(q.question_id, { query: v ?? '' })}
-                  options={{ minimap: { enabled: false }, fontSize: 14, automaticLayout: true }} />
+                  options={{ minimap: { enabled: false }, fontSize: 14, automaticLayout: true,
+                    padding: { top: 16 }, smoothScrolling: true, cursorBlinking: 'smooth',
+                    cursorSmoothCaretAnimation: 'on' }} />
               )}
               {q.qtype === 'mcq_single' && (
-                <div style={{ padding: 16, overflowY: 'auto' }}>
+                <div style={{ padding: 18, overflowY: 'auto' }}>
                   {q.config.options.map((o, i) => (
                     <label className="opt" key={i}>
                       <input type="radio" name={'q' + q.question_id} checked={ans.selected === i}
@@ -288,8 +298,8 @@ function Exam({ aid, onExit }) {
                 </div>
               )}
               {q.qtype === 'mcq_multi' && (
-                <div style={{ padding: 16, overflowY: 'auto' }}>
-                  {q.config.partial && <p className="muted">Partial marking is on.</p>}
+                <div style={{ padding: 18, overflowY: 'auto' }}>
+                  {q.config.partial && <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>Partial marking is on.</p>}
                   {q.config.options.map((o, i) => {
                     const sel = ans.selected || []
                     return (
@@ -317,29 +327,28 @@ function Exam({ aid, onExit }) {
               )}
             </div>
 
-            {/* output panel — drag its top edge to resize */}
             {hasOutput && (
               <>
                 <div className="h-divider" title="Drag to resize"
                   onMouseDown={startDrag('h', 'row-resize')} onTouchStart={startDrag('h', 'row-resize')} />
                 <div style={{ height: `${outH}%`, minHeight: 100, overflowY: 'auto', flexShrink: 0,
-                              padding: '10px 14px', background: 'var(--panel)' }}>
+                              padding: '12px 16px', background: 'var(--panel)' }}>
                 {q.qtype === 'python' && showStdin && (
-                  <div style={{ marginBottom: 8 }}>
-                    <label style={{ margin: '0 0 4px' }}>Custom input (stdin) for "Run my code"</label>
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={{ margin: '0 0 4px', textTransform: 'none' }}>Custom input (stdin) for "Run my code"</label>
                     <textarea rows={2} value={stdin[q.question_id] || ''}
                       onChange={e => setStdin(s => ({ ...s, [q.question_id]: e.target.value }))} />
                   </div>
                 )}
                 {rr && (
                   <>
-                    <b>Visible test cases: {rr.cases.filter(c => c.passed).length}/{rr.cases.length} passed</b>
+                    <b style={{ fontSize: 13 }}>Visible test cases: {rr.cases.filter(c => c.passed).length}/{rr.cases.length} passed</b>
                     <CaseResults res={rr} />
                   </>
                 )}
                 {fr && (
                   <>
-                    <b>Your output</b>
+                    <b style={{ fontSize: 13 }}>Your output</b>
                     <FreeRunResult res={fr} />
                   </>
                 )}
@@ -351,7 +360,8 @@ function Exam({ aid, onExit }) {
             {isCoding && (
               <>
                 {freeAllowed && (
-                  <button className="btn" disabled={busy === 'free'} onClick={runFree}>
+                  <button className="btn" disabled={busy === 'free'} onClick={runFree}
+                    style={busy !== 'free' ? { background: 'var(--ok-bg)', color: 'var(--ok)', borderColor: 'var(--ok)' } : {}}>
                     {busy === 'free' ? 'Running…' : '▶ Run my code'}
                   </button>
                 )}
@@ -365,7 +375,12 @@ function Exam({ aid, onExit }) {
                 )}
               </>
             )}
-            <span className="muted">Auto-saves as you type.</span>
+            <div className="auto-save-indicator">
+              {saveErr
+                ? <><span className="save-dot" style={{ background: 'var(--bad)', animation: 'none' }}></span> <span style={{ color: 'var(--bad)' }}>Save failed — check connection</span></>
+                : <><span className="save-dot"></span> Auto-saved</>
+              }
+            </div>
             <div className="spacer" />
             <button className="btn" disabled={idx === 0} onClick={() => setIdx(i => i - 1)}>← Prev</button>
             <button className="btn" disabled={idx === data.questions.length - 1} onClick={() => setIdx(i => i + 1)}>Next →</button>
@@ -380,21 +395,42 @@ function ReviewItem({ it, index }) {
   const [open, setOpen] = useState(false)
   const p = it.payload || {}
   const rv = it.review || {}
+
+  const scorePercent = it.score !== null && it.marks > 0 ? Math.round((it.score / it.marks) * 100) : null
+  const circumference = 2 * Math.PI * 28
+  const offset = scorePercent !== null ? circumference - (scorePercent / 100) * circumference : circumference
+
   return (
-    <div className="card">
-      <div className="row" style={{ cursor: 'pointer' }} onClick={() => setOpen(o => !o)}>
-        <b>Q{index + 1}. {it.title}</b>
-        <span className="muted">({it.qtype.replace('_', ' ')})</span>
-        <div className="spacer" />
-        <b>{it.score === null ? 'Pending (manual grading)' : `${it.score} / ${it.marks}`}</b>
-        <span className="muted">{open ? '▲' : '▼'}</span>
+    <div className="card" style={{ cursor: 'pointer' }} onClick={() => setOpen(o => !o)}>
+      <div className="row">
+        {scorePercent !== null && (
+          <div className="score-ring">
+            <svg viewBox="0 0 64 64">
+              <circle className="ring-bg" cx="32" cy="32" r="28" />
+              <circle className="ring-fg animated" cx="32" cy="32" r="28"
+                style={{ '--offset': offset, strokeDashoffset: offset }} />
+            </svg>
+            <div className="ring-text" style={{ color: scorePercent >= 70 ? 'var(--ok)' : scorePercent >= 40 ? 'var(--warn)' : 'var(--bad)' }}>
+              {scorePercent}%
+            </div>
+          </div>
+        )}
+        <div style={{ flex: 1 }}>
+          <b>Q{index + 1}. {it.title}</b>
+          <div className="muted" style={{ fontSize: 12 }}>{it.qtype.replace('_', ' ')} · {it.marks} marks</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <b style={{ fontSize: 18, color: it.score === null ? 'var(--warn)' : 'var(--accent)' }}>
+            {it.score === null ? 'Pending' : `${it.score} / ${it.marks}`}
+          </b>
+        </div>
+        <span className="muted" style={{ fontSize: 18 }}>{open ? '▲' : '▼'}</span>
       </div>
       {open && (
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: 16 }} onClick={e => e.stopPropagation()}>
           <MD text={it.statement} />
 
-          {/* your answer */}
-          <h4 style={{ margin: '14px 0 6px' }}>Your answer</h4>
+          <h4 style={{ margin: '16px 0 8px', color: 'var(--accent)' }}>Your answer</h4>
           {!it.payload && <p className="muted">Not attempted.</p>}
           {p.code !== undefined && <pre className="case mono" style={{ whiteSpace: 'pre-wrap' }}>{p.code}</pre>}
           {p.query !== undefined && <pre className="case mono" style={{ whiteSpace: 'pre-wrap' }}>{p.query}</pre>}
@@ -406,18 +442,18 @@ function ReviewItem({ it, index }) {
           )}
           {p.blanks && <p>You wrote: {p.blanks.map((b, j) => <code key={j} style={{ marginRight: 8 }}>{b || '—'}</code>)}</p>}
 
-          {/* per-test-case breakdown for coding questions */}
           {it.detail?.cases && (
-            <p>Test cases: {it.detail.cases.map((c, j) => (
-              <span key={j} className={'pill ' + (c.passed ? 'pass' : 'fail')} style={{ marginRight: 4 }}>
-                TC{c.index + 1} {c.passed ? '✓' : '✗'}
-              </span>
-            ))}</p>
+            <div style={{ display: 'flex', gap: 5, margin: '8px 0' }}>
+              {it.detail.cases.map((c, j) => (
+                <span key={j} className={'pill ' + (c.passed ? 'pass' : 'fail')}>
+                  TC{c.index + 1} {c.passed ? '✓' : '✗'}
+                </span>
+              ))}
+            </div>
           )}
 
-          {/* the expected answer */}
           {(rv.solution || rv.correct_sql || rv.correct !== undefined || rv.accepted) && (
-            <h4 style={{ margin: '14px 0 6px', color: 'var(--ok)' }}>Expected answer</h4>
+            <h4 style={{ margin: '16px 0 8px', color: 'var(--ok)' }}>Expected answer</h4>
           )}
           {rv.solution && <pre className="case mono" style={{ whiteSpace: 'pre-wrap' }}>{rv.solution}</pre>}
           {it.qtype === 'python' && !rv.solution && (rv.correct !== undefined || rv.test_cases) && (
@@ -450,16 +486,32 @@ function ResultView({ aid, onBack }) {
   const [r, setR] = useState(null)
   const [err, setErr] = useState('')
   useEffect(() => { api(`/student/assessments/${aid}/result`).then(setR).catch(e => setErr(e.message)) }, [aid])
+
+  const totalPercent = r && r.max > 0 ? Math.round((r.total / r.max) * 100) : 0
+
   return (
     <div className="page">
       <button className="btn sm" onClick={onBack}>← Back</button>
       {err && <div className="error">{err}</div>}
       {r && (
         <>
-          <div className="card">
-            <h2>{r.title}</h2>
-            <h3>Score: {r.total} / {r.max}</h3>
-            <p className="muted">Click any question below to review your answer and the expected answer.</p>
+          <div className="card" style={{ textAlign: 'center', padding: '2rem' }}>
+            <h2 style={{ marginBottom: 4 }}>{r.title}</h2>
+            <div style={{ fontSize: 42, fontWeight: 700, color: 'var(--accent)', margin: '16px 0 4px' }}>
+              {r.total} <span style={{ fontSize: 20, color: 'var(--muted)' }}>/ {r.max}</span>
+            </div>
+            <div className="muted" style={{ fontSize: 14 }}>{totalPercent}% overall</div>
+            <div style={{
+              width: '100%', height: 6, borderRadius: 3,
+              background: 'var(--line)', margin: '16px 0 8px', overflow: 'hidden'
+            }}>
+              <div style={{
+                width: `${totalPercent}%`, height: '100%', borderRadius: 3,
+                background: 'linear-gradient(90deg, var(--accent), var(--accent2))',
+                transition: 'width 1s cubic-bezier(0.16,1,0.3,1)'
+              }} />
+            </div>
+            <p className="muted" style={{ fontSize: 12 }}>Click any question below to review your answer.</p>
           </div>
           {r.items.map((it, i) => <ReviewItem key={i} it={it} index={i} />)}
         </>
@@ -477,38 +529,71 @@ export default function StudentApp({ auth, onLogout }) {
   if (view.name === 'exam') return <Exam aid={view.aid} onExit={() => setView({ name: 'home' })} />
   if (view.name === 'result') return (
     <>
-      <div className="topbar"><div className="brand">Assess<span>Hub</span></div><div className="spacer" />
-        <ThemeToggle /><span>{auth.username}</span><button className="btn sm" onClick={onLogout}>Log out</button></div>
+      <div className="topbar">
+        <div>
+          <div className="brand">Assess<span>Hub</span></div>
+          <div className="company-badge">Kantaka Sodhana</div>
+        </div>
+        <div className="spacer" />
+        <ThemeToggle />
+        <span style={{ fontSize: 13 }}>{auth.username}</span>
+        <button className="btn sm" onClick={onLogout}>Log out</button>
+      </div>
       <ResultView aid={view.aid} onBack={() => setView({ name: 'home' })} />
     </>
   )
 
+  const STATUS_CONFIG = {
+    open: { label: 'Open', icon: '🟢' },
+    in_progress: { label: 'In progress', icon: '🔵' },
+    submitted: { label: 'Submitted', icon: '✅' },
+    upcoming: { label: 'Upcoming', icon: '🕐' },
+    closed: { label: 'Closed', icon: '🔴' },
+  }
+
   return (
     <>
       <div className="topbar">
-        <div className="brand">Assess<span>Hub</span></div>
+        <div>
+          <div className="brand">Assess<span>Hub</span></div>
+          <div className="company-badge">Kantaka Sodhana</div>
+        </div>
         <div className="spacer" />
         <ThemeToggle />
-        <span>{auth.full_name || auth.username}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: 10,
+            background: 'linear-gradient(135deg, var(--accent), var(--accent2))',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontWeight: 600, fontSize: 13
+          }}>
+            {(auth.username?.[0] || '?').toUpperCase()}
+          </div>
+          <span style={{ fontSize: 13 }}>{auth.full_name || auth.username}</span>
+        </div>
         <button className="btn sm" onClick={onLogout}>Log out</button>
       </div>
       <div className="page">
-        <h2>Your assessments</h2>
-        {list.length === 0 && <p className="muted">Nothing assigned to you yet.</p>}
-        {list.map(a => (
-          <div className="card" key={a.id}>
-            <div className="row">
-              <div style={{ flex: 1 }}>
-                <b style={{ fontSize: 16 }}>{a.title}</b>
-                <div className="muted">{a.description}</div>
-                <div className="muted" style={{ marginTop: 6 }}>
+        <h2 style={{ marginBottom: 20 }}>Your assessments</h2>
+        {list.length === 0 && <p className="muted" style={{ textAlign: 'center', padding: 40 }}>Nothing assigned to you yet.</p>}
+        {list.map(a => {
+          const sc = STATUS_CONFIG[a.status] || { label: a.status, icon: '' }
+          return (
+            <div className="assess-card-wrap" key={a.id}>
+              <div className={`assess-icon ${a.status === 'open' ? 'green' : a.status === 'in_progress' ? 'blue' : a.status === 'submitted' ? 'green' : 'amber'}`}>
+                <span style={{ fontSize: 20 }}>{sc.icon}</span>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>{a.title}</div>
+                {a.description && <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>{a.description}</div>}
+                <div className="muted" style={{ fontSize: 12 }}>
                   {a.question_count} questions
                   {a.duration_minutes ? ` · ${a.duration_minutes} min limit` : ' · untimed'}
                   {a.start_at && ` · opens ${fmtDate(a.start_at)}`}
                   {a.end_at && ` · closes ${fmtDate(a.end_at)}`}
                 </div>
               </div>
-              <span className={'pill ' + a.status}>{a.status.replace('_', ' ')}</span>
+              <span className={'pill ' + a.status}>{sc.label}</span>
               {(a.status === 'open' || a.status === 'in_progress') && (
                 <button className="btn primary" onClick={() => setView({ name: 'exam', aid: a.id })}>
                   {a.status === 'open' ? 'Start' : 'Resume'}
@@ -518,8 +603,8 @@ export default function StudentApp({ auth, onLogout }) {
                 <button className="btn" onClick={() => setView({ name: 'result', aid: a.id })}>Review answers</button>
               )}
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </>
   )

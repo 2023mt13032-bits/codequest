@@ -8,6 +8,7 @@ import psycopg2
 import psycopg2.extensions
 
 EXECUTOR_URL = os.getenv("EXECUTOR_URL", "http://executor:8001")
+EXECUTOR_SECRET = os.getenv("EXECUTOR_SECRET", "")
 SANDBOX_DSN = os.getenv(
     "SANDBOX_DATABASE_URL",
     "postgresql://sandbox:sandbox@sqlsandbox:5432/sandbox",
@@ -27,9 +28,13 @@ def _norm_output(s: str) -> str:
 def run_python(code: str, stdin: str, time_limit: int) -> dict:
     """Send code to the isolated executor service."""
     try:
+        headers = {}
+        if EXECUTOR_SECRET:
+            headers["X-Executor-Secret"] = EXECUTOR_SECRET
         r = httpx.post(
             f"{EXECUTOR_URL}/run",
             json={"code": code, "stdin": stdin, "time_limit": time_limit},
+            headers=headers,
             timeout=time_limit + 15,
         )
         r.raise_for_status()

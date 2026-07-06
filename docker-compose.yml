@@ -31,6 +31,11 @@ services:
     environment:
       MAX_CONCURRENT: "4"
       MEM_LIMIT_MB: "256"
+      EXECUTOR_SECRET: ${EXECUTOR_SECRET:-}
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 10s
+      retries: 5
     restart: unless-stopped
     # internal only — not exposed to the host
 
@@ -40,7 +45,9 @@ services:
       DATABASE_URL: postgresql+psycopg2://app:${DB_PASSWORD:-app}@db:5432/assesshub
       SANDBOX_DATABASE_URL: postgresql://sandbox:${SANDBOX_PASSWORD:-sandbox}@sqlsandbox:5432/sandbox
       EXECUTOR_URL: http://executor:8001
+      EXECUTOR_SECRET: ${EXECUTOR_SECRET:-}
       SECRET_KEY: ${SECRET_KEY:-change-me}
+      ALLOW_DEFAULT_SECRET: "1"
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
       SQL_TIMEOUT_MS: "10000"

@@ -10,10 +10,12 @@ import resource
 import subprocess
 import tempfile
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 app = FastAPI(title="Executor")
+
+EXECUTOR_SECRET = os.getenv("EXECUTOR_SECRET", "")
 
 MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT", "4"))
 MEM_LIMIT_MB = int(os.getenv("MEM_LIMIT_MB", "256"))
@@ -62,7 +64,9 @@ def _run(code: str, stdin: str, time_limit: int) -> dict:
 
 
 @app.post("/run")
-async def run(body: RunIn):
+async def run(body: RunIn, x_executor_secret: str = Header(default="")):
+    if EXECUTOR_SECRET and x_executor_secret != EXECUTOR_SECRET:
+        raise HTTPException(403, "Invalid executor secret")
     async with sem:
         return await asyncio.to_thread(_run, body.code, body.stdin, body.time_limit)
 
