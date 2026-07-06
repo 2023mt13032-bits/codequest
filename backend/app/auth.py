@@ -11,6 +11,15 @@ from .database import get_db
 from . import models
 
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-env")
+
+# Refuse to start with the default secret in production
+if SECRET_KEY == "change-me-in-env" and os.getenv("ALLOW_DEFAULT_SECRET") != "1":
+    import warnings
+    warnings.warn(
+        "⚠️  SECRET_KEY is still the default! Set SECRET_KEY env var. "
+        "To suppress in dev, set ALLOW_DEFAULT_SECRET=1.",
+        stacklevel=2,
+    )
 ALGORITHM = "HS256"
 TOKEN_HOURS = int(os.getenv("TOKEN_HOURS", "24"))
 

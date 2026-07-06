@@ -1,10 +1,12 @@
 import csv
 import io
+from collections import defaultdict
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from ..database import get_db
 from .. import models, schemas
@@ -274,3 +276,145 @@ def export_csv(aid: int, db: Session = Depends(get_db)):
     buf.seek(0)
     return StreamingResponse(iter([buf.read()]), media_type="text/csv",
                              headers={"Content-Disposition": f"attachment; filename=assessment_{aid}_results.csv"})
+
+
+# ---------- analytics ----------
+
+@router.get("/analytics")
+def analytics(db: Session = Depends(get_db)):
+    """Full analytics: per-assessment scores, per-question difficulty, student activity, comparisons."""
+
+    assessments = db.query(models.Assessment).order_by(models.Assessment.id).all()
+    all_attempts = db.query(models.Attempt).all()
+    all_answers = db.query(models.Answer).all()
+    students = db.query(models.User).filter(models.User.role == "student").all()
+
+    # Index answers by attempt_id
+    answers_by_attempt = defaultdict(list)
+    for ans in all_answers:
+        answers_by_attempt[ans.attempt_id].append(ans)
+
+    # Index attempts by assessment_id
+    attempts_by_assessment = defaultdict(list)
+    for att in all_attempts:
+        attempts_by_assessment[att.assessment_id].append(att)
+
+    assessment_analytics = []
+
+    for a in assessments:
+        atts = attempts_by_assessment.get(a.id, [])
+        submitted = [att for att in atts if att.status == "submitted"]
+
+        # Compute max marks
+        max_marks = sum(effective_marks(aq) for aq in a.questions)
+        if max_marks == 0:
+            max_marks = 1  # avoid div by zero
+
+        # Compute per-student scores
+        scores = []
+        student_results = []
+        for att in submitted:
+            ans_map = {ans.question_id: ans for ans in answers_by_attempt.get(att.id, [])}
+            total = 0.0
+            for aq in a.questions:
+                ans = ans_map.get(aq.question_id)
+                if ans:
+                    s = ans.manual_score if ans.manual_score is not None else ans.auto_score
+                    total += s or 0
+            pct = round(total / max_marks * 100, 1) if max_marks else 0
+            scores.append(pct)
+            student_results.append({
+                "user_id": att.user_id,
+                "username": att.user.username,
+                "full_name": att.user.full_name,
+                "score": round(total, 2),
+                "max": round(max_marks, 2),
+                "pct": pct,
+                "started_at": att.started_at.isoformat() if att.started_at else None,
+                "submitted_at": att.submitted_at.isoformat() if att.submitted_at else None,
+                "duration_sec": int((att.submitted_at - att.started_at).total_seconds())
+                    if att.submitted_at and att.started_at else None,
+            })
+
+        # Score distribution buckets (0-10, 10-20, ..., 90-100)
+        buckets = [0] * 10
+        for pct in scores:
+            idx = min(int(pct // 10), 9)
+            buckets[idx] += 1
+
+        avg_score = round(sum(scores) / len(scores), 1) if scores else 0
+        median_score = round(sorted(scores)[len(scores) // 2], 1) if scores else 0
+        pass_rate = round(sum(1 for s in scores if s >= 50) / len(scores) * 100, 1) if scores else 0
+
+        # Per-question difficulty
+        question_stats = []
+        for aq in a.questions:
+            q = aq.question
+            m = effective_marks(aq)
+            q_scores = []
+            for att in submitted:
+                ans_map = {ans.question_id: ans for ans in answers_by_attempt.get(att.id, [])}
+                ans = ans_map.get(aq.question_id)
+                if ans:
+                    s = ans.manual_score if ans.manual_score is not None else ans.auto_score
+                    q_scores.append(s or 0)
+                else:
+                    q_scores.append(0)
+            avg_q = round(sum(q_scores) / len(q_scores), 2) if q_scores else 0
+            pct_correct = round(sum(1 for s in q_scores if s >= m) / len(q_scores) * 100, 1) if q_scores else 0
+            question_stats.append({
+                "question_id": q.id,
+                "title": q.title,
+                "qtype": q.qtype,
+                "marks": m,
+                "avg_score": avg_q,
+                "pct_full_marks": pct_correct,
+                "difficulty": "easy" if pct_correct >= 70 else "medium" if pct_correct >= 40 else "hard",
+            })
+
+        assessment_analytics.append({
+            "id": a.id,
+            "title": a.title,
+            "published": a.published,
+            "total_attempts": len(atts),
+            "submitted_count": len(submitted),
+            "max_marks": round(max_marks, 2),
+            "avg_score": avg_score,
+            "median_score": median_score,
+            "pass_rate": pass_rate,
+            "score_distribution": buckets,
+            "question_stats": question_stats,
+            "student_results": student_results,
+        })
+
+    # Student activity timeline (last 30 days of attempt starts/submits)
+    activity = []
+    for att in all_attempts:
+        if att.started_at:
+            activity.append({
+                "type": "start",
+                "user_id": att.user_id,
+                "username": att.user.username,
+                "assessment_id": att.assessment_id,
+                "ts": att.started_at.isoformat(),
+            })
+        if att.submitted_at:
+            activity.append({
+                "type": "submit",
+                "user_id": att.user_id,
+                "username": att.user.username,
+                "assessment_id": att.assessment_id,
+                "ts": att.submitted_at.isoformat(),
+            })
+    activity.sort(key=lambda x: x["ts"], reverse=True)
+
+    return {
+        "assessments": assessment_analytics,
+        "activity": activity[:100],
+        "summary": {
+            "total_students": len(students),
+            "total_assessments": len(assessments),
+            "total_attempts": len(all_attempts),
+            "total_submitted": sum(1 for a in all_attempts if a.status == "submitted"),
+        },
+    }

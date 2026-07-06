@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 export function useTheme() {
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light')
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('theme', theme)
@@ -14,8 +14,8 @@ export function ThemeToggle() {
   const [theme, toggle] = useTheme()
   return (
     <button className="btn sm theme-toggle" onClick={toggle}
-      title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}>
-      {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
+      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+      {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
     </button>
   )
 }
